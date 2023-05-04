@@ -34,6 +34,7 @@ Googleスプレッドシートのセルに次のように入力します。
 ## テスト
 
 ```shell
+cd library
 deno test test*.js
 ```
 

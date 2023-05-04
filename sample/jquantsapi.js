@@ -1,0 +1,1 @@
+jquantsapi.setProperties(PropertiesService.getScriptProperties());

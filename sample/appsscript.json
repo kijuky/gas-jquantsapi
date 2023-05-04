@@ -1,0 +1,15 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "jquantsapi",
+        "libraryId": "1fQcntI2lJBbiqfz1IaXLNOuJ8Z3IUuD5xiTsqfBzdJZMdcCMSTPJrsoX",
+        "version": "0",
+        "developmentMode": true
+      }
+    ]
+  }
+}

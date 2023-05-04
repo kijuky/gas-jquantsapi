@@ -31,6 +31,12 @@ Googleスプレッドシートのセルに次のように入力します。
 
 指定したコード(2789)の企業名が表示されます。
 
+## テスト
+
+```shell
+deno test test_*.js
+```
+
 ## 参考
 
 - [J-Quants](https://jpx-jquants.com/)

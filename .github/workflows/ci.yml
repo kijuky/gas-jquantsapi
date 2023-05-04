@@ -13,4 +13,4 @@ jobs:
         with:
           deno-version: v1.x
       - name: Test
-        run: deno test test-*.js
+        run: deno test test*.js

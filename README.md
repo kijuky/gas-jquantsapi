@@ -34,7 +34,7 @@ Googleスプレッドシートのセルに次のように入力します。
 ## テスト
 
 ```shell
-deno test test_*.js
+deno test test*.js
 ```
 
 ## 参考

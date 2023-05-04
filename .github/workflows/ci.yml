@@ -14,4 +14,4 @@ jobs:
           deno-version: v1.x
       # テストの実行が難しい...
       #- name: Test
-      #  run: deno test test*.js
+      #  run: cd library && deno test test*.js

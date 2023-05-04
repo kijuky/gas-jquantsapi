@@ -81,7 +81,7 @@ function tokenAuthUser(inheritLock) {
   if (currentLock1 == lock) {
     properties_.setProperty(REFRESH_TOKEN_KEY, refreshToken);
     if (!inheritLock) {
-      properties_.deleteProperties(LOCK_KEY);
+      properties_.deleteProperty(LOCK_KEY);
     }
   } else {
     // 他のスレッドでロックを再取得されたため、lockがなくなるまでスリープする。
@@ -238,8 +238,94 @@ function pricesDailyQuotes(params) {
     to ? `to=${to}` : null,
     pagination_key ? `pagination_key=${pagination_key}` : null
   ].filter(Boolean).join(`&`);
-  const path = `prices/daily_quotes${param}`;
+  const path = `prices/daily_quotes?${param}`;
   const response = fetchWithToken_(path);
   const contentText = response.getContentText();
   return JSON.parse(contentText);
+}
+
+/**
+ * 財務情報
+ * 
+ * @param {object} params リクエストパラメータ
+ * @return {object} レスポンスオブジェクト
+ * @see https://jpx.gitbook.io/j-quants-ja/api-reference/statements
+ */
+function finsStatements(params) {
+  const { code, date, pagination_key } = params || {};
+  const param = [
+    code ? `code=${code}` : null,
+    date ? `date=${date}` : null,
+    pagination_key ? `pagination_key=${pagination_key}` : null
+  ].filter(Boolean).join(`&`);
+  const path = `fins/statements?${param}`;
+  const response = fetchWithToken_(path);
+  const contentText = response.getContentText();
+  return JSON.parse(contentText);
+}
+
+/**
+ * 決算発表予定日
+ * 
+ * @param {object} params リクエストパラメータ
+ * @return {object} レスポンスオブジェクト
+ * @see https://jpx.gitbook.io/j-quants-ja/api-reference/announcement
+ */
+function finsAnnouncement(params) {
+  const { pagination_key } = params || {};
+  const param = [
+    pagination_key ? `pagination_key=${pagination_key}` : null
+  ].filter(Boolean).join(`&`);
+  const path = `fins/announcement?${param}`;
+  const response = fetchWithToken_(path);
+  const contentText = response.getContentText();
+  return JSON.parse(contentText);
+}
+
+/**
+ * 開示書類種別
+ * 
+ * @param {string} typeOfDocument 開示書類種別
+ * @return {string} 対応する概要（JP）なければtypeDocumentを返します。
+ * @see https://jpx.gitbook.io/j-quants-ja/api-reference/statements/typeofdocument
+ */
+function typeOfDocumentToText(typeOfDocument) {
+  switch (typeOfDocument) {
+    case "FYFinancialStatements_Consolidated_JP": return "決算短信（連結・日本基準）";
+    case "FYFinancialStatements_Consolidated_US": return "決算短信（連結・米国基準）";
+    case "FYFinancialStatements_NonConsolidated_JP": return "決算短信（非連結・日本基準）";
+    case "1QFinancialStatements_Consolidated_JP": return "第1四半期決算短信（連結・日本基準）";
+    case "1QFinancialStatements_Consolidated_US": return "第1四半期決算短信（連結・米国基準）";
+    case "1QFinancialStatements_NonConsolidated_JP": return "第1四半期決算短信（非連結・日本基準）";
+    case "2QFinancialStatements_Consolidated_JP": return "第2四半期決算短信（連結・日本基準）";
+    case "2QFinancialStatements_Consolidated_US": return "第2四半期決算短信（連結・米国基準）";
+    case "2QFinancialStatements_NonConsolidated_JP": return "第2四半期決算短信（非連結・日本基準）";
+    case "3QFinancialStatements_Consolidated_JP": return "第3四半期決算短信（連結・日本基準）";
+    case "3QFinancialStatements_Consolidated_US": return "第3四半期決算短信（連結・米国基準）";
+    case "3QFinancialStatements_NonConsolidated_JP": return "第3四半期決算短信（非連結・日本基準）";
+    case "OtherPeriodFinancialStatements_Consolidated_JP": return "その他四半期決算短信（連結・日本基準）";
+    case "OtherPeriodFinancialStatements_Consolidated_US": return "その他四半期決算短信（連結・米国基準）";
+    case "OtherPeriodFinancialStatements_NonConsolidated_JP": return "その他四半期決算短信（非連結・日本基準）";
+    case "FYFinancialStatements_Consolidated_JMIS": return "決算短信（連結・ＪＭＩＳ）";
+    case "1QFinancialStatements_Consolidated_JMIS": return "第1四半期決算短信（連結・ＪＭＩＳ）";
+    case "2QFinancialStatements_Consolidated_JMIS": return "第2四半期決算短信（連結・ＪＭＩＳ）";
+    case "3QFinancialStatements_Consolidated_JMIS": return "第3四半期決算短信（連結・ＪＭＩＳ）";
+    case "OtherPeriodFinancialStatements_Consolidated_JMIS": return "その他四半期決算短信（連結・ＪＭＩＳ）";
+    case "FYFinancialStatements_NonConsolidated_IFRS": return "決算短信（非連結・ＩＦＲＳ）";
+    case "1QFinancialStatements_NonConsolidated_IFRS": return "第1四半期決算短信（非連結・ＩＦＲＳ）";
+    case "2QFinancialStatements_NonConsolidated_IFRS": return "第2四半期決算短信（非連結・ＩＦＲＳ）";
+    case "3QFinancialStatements_NonConsolidated_IFRS": return "第3四半期決算短信（非連結・ＩＦＲＳ）";
+    case "OtherPeriodFinancialStatements_NonConsolidated_IFRS": return "その他四半期決算短信（非連結・ＩＦＲＳ）";
+    case "FYFinancialStatements_Consolidated_IFRS": return "決算短信（連結・ＩＦＲＳ）";
+    case "1QFinancialStatements_Consolidated_IFRS": return "第1四半期決算短信（連結・ＩＦＲＳ）";
+    case "2QFinancialStatements_Consolidated_IFRS": return "第2四半期決算短信（連結・ＩＦＲＳ）";
+    case "3QFinancialStatements_Consolidated_IFRS": return "第3四半期決算短信（連結・ＩＦＲＳ）";
+    case "OtherPeriodFinancialStatements_Consolidated_IFRS": return "その他四半期決算短信（連結・ＩＦＲＳ）";
+    case "FYFinancialStatements_Consolidated_REIT": return "決算短信（REIT）";
+    case "DividendForecastRevision": return "配当予想の修正";
+    case "EarnForecastRevision": return "業績予想の修正";
+    case "REITDividendForecastRevision": return "分配予想の修正";
+    case "REITEarnForecastRevision": return "利益予想の修正";
+    default: return typeOfDocument;
+  }
 }

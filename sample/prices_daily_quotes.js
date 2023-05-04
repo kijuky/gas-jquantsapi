@@ -19,5 +19,5 @@ function jquants_daily_quotes(code, date) {
     dailyQuotes.AdjustmentLow,
     dailyQuotes.AdjustmentClose,
     dailyQuotes.AdjustmentVolume
-  ]
+  ];
 }

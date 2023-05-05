@@ -1,10 +1,10 @@
-const baseUrl = "https://api.jquants.com/v1";
+const baseUrl = `https://api.jquants.com/v1`;
 
-const MAIL_ADDRESS_KEY = "JQUANTSAPI_MAILADDRESS";
-const PASSWORD_KEY = "JQUANTSAPI_PASSWORD";
-const REFRESH_TOKEN_KEY = "JQUANTSAPI_REFRESHTOKEN";
-const ID_TOKEN_KEY = "JQUANTSAPI_IDTOKEN";
-const LOCK_KEY = "JQUANTSAPI_LOCK";
+const MAIL_ADDRESS_KEY = `JQUANTSAPI_MAILADDRESS`;
+const PASSWORD_KEY = `JQUANTSAPI_PASSWORD`;
+const REFRESH_TOKEN_KEY = `JQUANTSAPI_REFRESHTOKEN`;
+const ID_TOKEN_KEY = `JQUANTSAPI_IDTOKEN`;
+const LOCK_KEY = `JQUANTSAPI_LOCK`;
 
 let properties_ = null;
 
@@ -35,11 +35,28 @@ function fetchAndWait_(url, params, sleep = 1000) {
  * ロックが解放されるまでスリープします。 
  *
  * @param {number} sleep ロックの解放を確認する時間(ms)
+ * @param {number} deadCount 確認待ちの間に、他のスレッドがロックを取得したまま死んだとみなすカウント。
  */
-function waitForLock_(sleep = 1000) {
-  do {
+function waitForLock_(sleep = 1000, deadCount = 10) {
+  let i = 0;
+  for (; i < deadCount; i++) {
+    if (!properties_.getProperty(LOCK_KEY)) {
+      break;
+    }
+    //console.info(`wait for release lock... (${i})`);
     Utilities.sleep(sleep);
-  } while(!properties_.getProperty(LOCK_KEY));
+  }
+
+  // デッドカウントに達した場合は、強制的にロックを外す
+  if (i == deadCount) {
+    properties_.deleteProperty(LOCK_KEY);
+    throw new Exception(`invalid lock state. please re-run function.`);
+  }
+}
+
+function parseResponse_(response) {
+  const contentText = response.getContentText();
+  return JSON.parse(contentText);
 }
 
 /**
@@ -54,12 +71,18 @@ function tokenAuthUser(inheritLock) {
 
   // mutex lock
   const currentLock = properties_.getProperty(LOCK_KEY);
-  if (currentLock == null) {
-    properties_.setProperty(LOCK_KEY, lock);
-  } else if (currentLock != lock) {
+  if (currentLock) {
     // 他のスレッドでリフレッシュトークンを更新中なので、lockがなくなるまでスリープする。
     waitForLock_();
     return properties_.getProperty(REFRESH_TOKEN_KEY);
+  } else {
+    properties_.setProperty(LOCK_KEY, lock);
+    const currentLock = properties_.getProperty(LOCK_KEY);
+    if (currentLock != lock) {
+      // 他のスレッドでロックを再取得されたため、lockがなくなるまでスリープする。
+      waitForLock_();
+      return properties_.getProperty(REFRESH_TOKEN_KEY);
+    }
   }
 
   const url = `${baseUrl}/token/auth_user`;
@@ -75,8 +98,7 @@ function tokenAuthUser(inheritLock) {
   };
   const response = fetchAndWait_(url, params);
 
-  const contentText = response.getContentText();
-  const refreshToken = JSON.parse(contentText).refreshToken;
+  const refreshToken = parseResponse_(response).refreshToken;
   const currentLock1 = properties_.getProperty(LOCK_KEY);
   if (currentLock1 == lock) {
     properties_.setProperty(REFRESH_TOKEN_KEY, refreshToken);
@@ -85,7 +107,7 @@ function tokenAuthUser(inheritLock) {
     }
   } else {
     // 他のスレッドでロックを再取得されたため、lockがなくなるまでスリープする。
-    waitForLock_();
+    //waitForLock_(); // 待っても良いけど、ここで取得した値をとっとと返して良い
   }
   return refreshToken;
 }
@@ -107,28 +129,33 @@ function tokenAuthRefresh() {
   };
 
   const registToken = (response, lock) => {
-    const contentText = response.getContentText();
-    const idToken = JSON.parse(contentText).idToken;
+    const idToken = parseResponse_(response).idToken;
     const currentLock = properties_.getProperty(LOCK_KEY);
     if (currentLock == lock) {
       properties_.setProperty(ID_TOKEN_KEY, idToken);
-      properties_.deleteProperties(LOCK_KEY);
+      properties_.deleteProperty(LOCK_KEY);
     } else {
       // 他のスレッドでロックを再取得されたため、lockがなくなるまでスリープする。
-      waitForLock_();
+      //waitForLock_(); // 待っても良いけど、ここで取得した値をとっとと返して良い
     }
     return idToken;
   };
 
   // mutex lock
-  const currentLock = properties_.getProperty(LOCK_KEY);
   const lock = Utilities.getUuid();
-  if (!currentLock) {
-    properties_.setProperty(LOCK_KEY, lock);
-  } else {
+  const currentLock = properties_.getProperty(LOCK_KEY);
+  if (currentLock) {
     // 他のスレッドでIDトークンを更新中なので、lockがなくなるまでスリープする。
     waitForLock_();
     return properties_.getProperty(ID_TOKEN_KEY);
+  } else {
+    properties_.setProperty(LOCK_KEY, lock);
+    const currentLock = properties_.getProperty(LOCK_KEY);
+    if (currentLock != lock) {
+      // 他のスレッドでロックを再取得されたため、lockがなくなるまでスリープする。
+      waitForLock_();
+      return properties_.getProperty(ID_TOKEN_KEY);
+    }
   }
 
   const refreshToken = properties_.getProperty(REFRESH_TOKEN_KEY);
@@ -154,11 +181,12 @@ function tokenAuthRefresh() {
  * IDトークンを付与してurlにアクセスします。
  *
  * @param {string} path アクセス先パス
- * @return {HTTPResponse} レスポンス
+ * @param {string} paginationKey ページネーションキー
+ * @return {object} レスポンスオブジェクト
  */
-function fetchWithToken_(path) {
-  const fetchToken = (idToken, muteHttpExceptions) => {
-    const url = `${baseUrl}/${path}`;
+function fetchWithToken_(path, paginationKey) {
+  const fetch = (idToken, muteHttpExceptions) => {
+    const url = `${baseUrl}/${path}${paginationKey ? `${path.includes(`?`) ? `&` : `?`}${paginationKey}` : ``}`;
     const params = {
       headers: {
         Authorization: `Bearer ${idToken}`
@@ -172,17 +200,40 @@ function fetchWithToken_(path) {
   if (!idToken) {
     // まだIDトークンを取得していない場合は、IDトークンを取得する。
     const idToken = tokenAuthRefresh();
-    return fetchToken(idToken, false);
+    const response = fetch(idToken, false);
+    return parseResponse_(response);
   } else {
-    const response = fetchToken(idToken, true);
+    const response = fetch(idToken, true);
     if (response.getResponseCode() != 200) {
       // IDトークンが期限切れの場合は、新たにIDトークンを取得する。
       const idToken = tokenAuthRefresh();
-      return fetchToken(idToken, false);
+      const response = fetch(idToken, false);
+      return parseResponse_(response);
     } else {
-      return response;
+      return parseResponse_(response);
     }
   }
+}
+
+/**
+ * ページネーションを加味して、全てのレスポンスを取得します。
+ *
+ * @param {string} path アクセス先パス
+ * @param {string} field ページネーションするフィールド名
+ * @return {object} レスポンスオブジェクト
+ */
+function fetchAll_(path, field) {
+  const response = fetchWithToken_(path);
+
+  // ページング処理
+  let currentResponse = response;
+  for (let paginationKey = currentResponse[`pagination_key`]; paginationKey; paginationKey = currentResponse[`pagination_key`]) {
+    console.log(`paging... ${response[field].length}`);
+    currentResponse = fetchWithToken_(path, paginationKey);
+    response[field].push(...currentResponse[field]);
+  }
+
+  return response;
 }
 
 /**
@@ -216,10 +267,8 @@ function listedInfo(params) {
     code ? `code=${code}` : null,
     date ? `date=${date}` : null
   ].filter(Boolean).join(`&`);
-  const path = `listed/info?${param}`;
-  const response = fetchWithToken_(path);
-  const contentText = response.getContentText();
-  return JSON.parse(contentText);
+  const path = `listed/info${param  ? `?${param}` : ``}`;
+  return fetchWithToken_(path);
 }
 
 /**
@@ -230,18 +279,16 @@ function listedInfo(params) {
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/daily_quotes
  */
 function pricesDailyQuotes(params) {
-  const { code, date, from, to, pagination_key } = params || {date: latestDateForFreePlan()};
+  const { code, date, from, to } = params || {date: latestDateForFreePlan()};
   const param = [
     code ? `code=${code}` : null,
     date ? `date=${date}` : null,
     from ? `from=${from}` : null,
-    to ? `to=${to}` : null,
-    pagination_key ? `pagination_key=${pagination_key}` : null
+    to ? `to=${to}` : null
   ].filter(Boolean).join(`&`);
-  const path = `prices/daily_quotes?${param}`;
-  const response = fetchWithToken_(path);
-  const contentText = response.getContentText();
-  return JSON.parse(contentText);
+  const path = `prices/daily_quotes${param ? `?${param}` : ``}`;
+  //return fetchAll_(path, `daily_quotes`);
+  return fetchWithToken_(path);
 }
 
 /**
@@ -252,16 +299,13 @@ function pricesDailyQuotes(params) {
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/statements
  */
 function finsStatements(params) {
-  const { code, date, pagination_key } = params || {};
+  const { code, date } = params || {};
   const param = [
     code ? `code=${code}` : null,
-    date ? `date=${date}` : null,
-    pagination_key ? `pagination_key=${pagination_key}` : null
+    date ? `date=${date}` : null
   ].filter(Boolean).join(`&`);
-  const path = `fins/statements?${param}`;
-  const response = fetchWithToken_(path);
-  const contentText = response.getContentText();
-  return JSON.parse(contentText);
+  const path = `fins/statements${param ? `?${param}` : ``}`;
+  return fetchAll_(path, `statements`);
 }
 
 /**
@@ -272,14 +316,8 @@ function finsStatements(params) {
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/announcement
  */
 function finsAnnouncement(params) {
-  const { pagination_key } = params || {};
-  const param = [
-    pagination_key ? `pagination_key=${pagination_key}` : null
-  ].filter(Boolean).join(`&`);
-  const path = `fins/announcement?${param}`;
-  const response = fetchWithToken_(path);
-  const contentText = response.getContentText();
-  return JSON.parse(contentText);
+  const path = `fins/announcement`;
+  return fetchAll_(path, `announcement`);
 }
 
 /**
@@ -291,41 +329,41 @@ function finsAnnouncement(params) {
  */
 function typeOfDocumentToText(typeOfDocument) {
   switch (typeOfDocument) {
-    case "FYFinancialStatements_Consolidated_JP": return "決算短信（連結・日本基準）";
-    case "FYFinancialStatements_Consolidated_US": return "決算短信（連結・米国基準）";
-    case "FYFinancialStatements_NonConsolidated_JP": return "決算短信（非連結・日本基準）";
-    case "1QFinancialStatements_Consolidated_JP": return "第1四半期決算短信（連結・日本基準）";
-    case "1QFinancialStatements_Consolidated_US": return "第1四半期決算短信（連結・米国基準）";
-    case "1QFinancialStatements_NonConsolidated_JP": return "第1四半期決算短信（非連結・日本基準）";
-    case "2QFinancialStatements_Consolidated_JP": return "第2四半期決算短信（連結・日本基準）";
-    case "2QFinancialStatements_Consolidated_US": return "第2四半期決算短信（連結・米国基準）";
-    case "2QFinancialStatements_NonConsolidated_JP": return "第2四半期決算短信（非連結・日本基準）";
-    case "3QFinancialStatements_Consolidated_JP": return "第3四半期決算短信（連結・日本基準）";
-    case "3QFinancialStatements_Consolidated_US": return "第3四半期決算短信（連結・米国基準）";
-    case "3QFinancialStatements_NonConsolidated_JP": return "第3四半期決算短信（非連結・日本基準）";
-    case "OtherPeriodFinancialStatements_Consolidated_JP": return "その他四半期決算短信（連結・日本基準）";
-    case "OtherPeriodFinancialStatements_Consolidated_US": return "その他四半期決算短信（連結・米国基準）";
-    case "OtherPeriodFinancialStatements_NonConsolidated_JP": return "その他四半期決算短信（非連結・日本基準）";
-    case "FYFinancialStatements_Consolidated_JMIS": return "決算短信（連結・ＪＭＩＳ）";
-    case "1QFinancialStatements_Consolidated_JMIS": return "第1四半期決算短信（連結・ＪＭＩＳ）";
-    case "2QFinancialStatements_Consolidated_JMIS": return "第2四半期決算短信（連結・ＪＭＩＳ）";
-    case "3QFinancialStatements_Consolidated_JMIS": return "第3四半期決算短信（連結・ＪＭＩＳ）";
-    case "OtherPeriodFinancialStatements_Consolidated_JMIS": return "その他四半期決算短信（連結・ＪＭＩＳ）";
-    case "FYFinancialStatements_NonConsolidated_IFRS": return "決算短信（非連結・ＩＦＲＳ）";
-    case "1QFinancialStatements_NonConsolidated_IFRS": return "第1四半期決算短信（非連結・ＩＦＲＳ）";
-    case "2QFinancialStatements_NonConsolidated_IFRS": return "第2四半期決算短信（非連結・ＩＦＲＳ）";
-    case "3QFinancialStatements_NonConsolidated_IFRS": return "第3四半期決算短信（非連結・ＩＦＲＳ）";
-    case "OtherPeriodFinancialStatements_NonConsolidated_IFRS": return "その他四半期決算短信（非連結・ＩＦＲＳ）";
-    case "FYFinancialStatements_Consolidated_IFRS": return "決算短信（連結・ＩＦＲＳ）";
-    case "1QFinancialStatements_Consolidated_IFRS": return "第1四半期決算短信（連結・ＩＦＲＳ）";
-    case "2QFinancialStatements_Consolidated_IFRS": return "第2四半期決算短信（連結・ＩＦＲＳ）";
-    case "3QFinancialStatements_Consolidated_IFRS": return "第3四半期決算短信（連結・ＩＦＲＳ）";
-    case "OtherPeriodFinancialStatements_Consolidated_IFRS": return "その他四半期決算短信（連結・ＩＦＲＳ）";
-    case "FYFinancialStatements_Consolidated_REIT": return "決算短信（REIT）";
-    case "DividendForecastRevision": return "配当予想の修正";
-    case "EarnForecastRevision": return "業績予想の修正";
-    case "REITDividendForecastRevision": return "分配予想の修正";
-    case "REITEarnForecastRevision": return "利益予想の修正";
+    case `FYFinancialStatements_Consolidated_JP`: return `決算短信（連結・日本基準）`;
+    case `FYFinancialStatements_Consolidated_US`: return `決算短信（連結・米国基準）`;
+    case `FYFinancialStatements_NonConsolidated_JP`: return `決算短信（非連結・日本基準）`;
+    case `1QFinancialStatements_Consolidated_JP`: return `第1四半期決算短信（連結・日本基準）`;
+    case `1QFinancialStatements_Consolidated_US`: return `第1四半期決算短信（連結・米国基準）`;
+    case `1QFinancialStatements_NonConsolidated_JP`: return `第1四半期決算短信（非連結・日本基準）`;
+    case `2QFinancialStatements_Consolidated_JP`: return `第2四半期決算短信（連結・日本基準）`;
+    case `2QFinancialStatements_Consolidated_US`: return `第2四半期決算短信（連結・米国基準）`;
+    case `2QFinancialStatements_NonConsolidated_JP`: return `第2四半期決算短信（非連結・日本基準）`;
+    case `3QFinancialStatements_Consolidated_JP`: return `第3四半期決算短信（連結・日本基準）`;
+    case `3QFinancialStatements_Consolidated_US`: return `第3四半期決算短信（連結・米国基準）`;
+    case `3QFinancialStatements_NonConsolidated_JP`: return `第3四半期決算短信（非連結・日本基準）`;
+    case `OtherPeriodFinancialStatements_Consolidated_JP`: return `その他四半期決算短信（連結・日本基準）`;
+    case `OtherPeriodFinancialStatements_Consolidated_US`: return `その他四半期決算短信（連結・米国基準）`;
+    case `OtherPeriodFinancialStatements_NonConsolidated_JP`: return `その他四半期決算短信（非連結・日本基準）`;
+    case `FYFinancialStatements_Consolidated_JMIS`: return `決算短信（連結・ＪＭＩＳ）`;
+    case `1QFinancialStatements_Consolidated_JMIS`: return `第1四半期決算短信（連結・ＪＭＩＳ）`;
+    case `2QFinancialStatements_Consolidated_JMIS`: return `第2四半期決算短信（連結・ＪＭＩＳ）`;
+    case `3QFinancialStatements_Consolidated_JMIS`: return `第3四半期決算短信（連結・ＪＭＩＳ）`;
+    case `OtherPeriodFinancialStatements_Consolidated_JMIS`: return `その他四半期決算短信（連結・ＪＭＩＳ）`;
+    case `FYFinancialStatements_NonConsolidated_IFRS`: return `決算短信（非連結・ＩＦＲＳ）`;
+    case `1QFinancialStatements_NonConsolidated_IFRS`: return `第1四半期決算短信（非連結・ＩＦＲＳ）`;
+    case `2QFinancialStatements_NonConsolidated_IFRS`: return `第2四半期決算短信（非連結・ＩＦＲＳ）`;
+    case `3QFinancialStatements_NonConsolidated_IFRS`: return `第3四半期決算短信（非連結・ＩＦＲＳ）`;
+    case `OtherPeriodFinancialStatements_NonConsolidated_IFRS`: return `その他四半期決算短信（非連結・ＩＦＲＳ）`;
+    case `FYFinancialStatements_Consolidated_IFRS`: return `決算短信（連結・ＩＦＲＳ）`;
+    case `1QFinancialStatements_Consolidated_IFRS`: return `第1四半期決算短信（連結・ＩＦＲＳ）`;
+    case `2QFinancialStatements_Consolidated_IFRS`: return `第2四半期決算短信（連結・ＩＦＲＳ）`;
+    case `3QFinancialStatements_Consolidated_IFRS`: return `第3四半期決算短信（連結・ＩＦＲＳ）`;
+    case `OtherPeriodFinancialStatements_Consolidated_IFRS`: return `その他四半期決算短信（連結・ＩＦＲＳ）`;
+    case `FYFinancialStatements_Consolidated_REIT`: return `決算短信（REIT）`;
+    case `DividendForecastRevision`: return `配当予想の修正`;
+    case `EarnForecastRevision`: return `業績予想の修正`;
+    case `REITDividendForecastRevision`: return `分配予想の修正`;
+    case `REITEarnForecastRevision`: return `利益予想の修正`;
     default: return typeOfDocument;
   }
 }

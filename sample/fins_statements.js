@@ -3,6 +3,8 @@ function jquants_fins_statements_(code, date) {
 }
 
 function jquants_fins_statements(code, date = jquantsapi.latestDateForFreePlan()) {
+  if (!code) return [];
+
   const statements = jquants_fins_statements_(code).statements.reduce((acc, cur) => {
     // dateに一番近いデータを取得する
     if (acc) {

@@ -3,6 +3,8 @@ function jquants_daily_quotes_(code, date) {
 }
 
 function jquants_daily_quotes(code, date) {
+  if (!code) return [];
+
   const dailyQuotes = jquants_daily_quotes_(code, date).daily_quotes[0];
   return [
     dailyQuotes.Date,
@@ -19,5 +21,5 @@ function jquants_daily_quotes(code, date) {
     dailyQuotes.AdjustmentLow,
     dailyQuotes.AdjustmentClose,
     dailyQuotes.AdjustmentVolume
-  ];
+  ]
 }

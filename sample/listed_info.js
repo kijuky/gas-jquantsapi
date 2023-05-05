@@ -3,6 +3,8 @@ function jquants_info_(code, date) {
 }
 
 function jquants_info(code, date) {
+  if (!code) return [];
+
   const info = jquants_info_(code, date).info[0];
   return [
     info.Date,

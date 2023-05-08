@@ -19,7 +19,7 @@ function setProperties(properties) {
 
 /**
  * urlにアクセス後にスリープします。
- * 
+ *
  * @param {string} url アクセス先URL
  * @param {object} params 高度なパラメータ
  * @param {number} sleep アクセス後にスリープする時間(ms)
@@ -43,7 +43,6 @@ function waitForLock_(sleep = 1000, deadCount = 10) {
     if (!properties_.getProperty(LOCK_KEY)) {
       break;
     }
-    //console.info(`wait for release lock... (${i})`);
     Utilities.sleep(sleep);
   }
 
@@ -61,7 +60,7 @@ function parseResponse_(response) {
 
 /**
  * リフレッシュトークンを取得し、プロパティストアに設定します。
- * 
+ *
  * @param {string} inheritLock 継承されたロック
  * @return {string} リフレッシュトークン
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/refreshtoken
@@ -186,7 +185,7 @@ function tokenAuthRefresh() {
  */
 function fetchWithToken_(path, paginationKey) {
   const fetch = (idToken, muteHttpExceptions) => {
-    const url = `${baseUrl}/${path}${paginationKey ? `${path.includes(`?`) ? `&` : `?`}${paginationKey}` : ``}`;
+    const url = `${baseUrl}/${path}${paginationKey ? `${path.includes(`?`) ? `&` : `?`}pagination_key=${paginationKey}` : ``}`;
     const params = {
       headers: {
         Authorization: `Bearer ${idToken}`
@@ -228,7 +227,6 @@ function fetchAll_(path, field) {
   // ページング処理
   let currentResponse = response;
   for (let paginationKey = currentResponse[`pagination_key`]; paginationKey; paginationKey = currentResponse[`pagination_key`]) {
-    console.log(`paging... ${response[field].length}`);
     currentResponse = fetchWithToken_(path, paginationKey);
     response[field].push(...currentResponse[field]);
   }
@@ -273,7 +271,7 @@ function listedInfo(params) {
 
 /**
  * 株価四本値
- * 
+ *
  * @param {object} params リクエストパラメータ
  * @return {object} レスポンスオブジェクト
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/daily_quotes
@@ -287,13 +285,12 @@ function pricesDailyQuotes(params) {
     to ? `to=${to}` : null
   ].filter(Boolean).join(`&`);
   const path = `prices/daily_quotes${param ? `?${param}` : ``}`;
-  //return fetchAll_(path, `daily_quotes`);
-  return fetchWithToken_(path);
+  return fetchAll_(path, `daily_quotes`);
 }
 
 /**
  * 財務情報
- * 
+ *
  * @param {object} params リクエストパラメータ
  * @return {object} レスポンスオブジェクト
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/statements
@@ -310,7 +307,7 @@ function finsStatements(params) {
 
 /**
  * 決算発表予定日
- * 
+ *
  * @param {object} params リクエストパラメータ
  * @return {object} レスポンスオブジェクト
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/announcement
@@ -322,7 +319,7 @@ function finsAnnouncement(params) {
 
 /**
  * 開示書類種別
- * 
+ *
  * @param {string} typeOfDocument 開示書類種別
  * @return {string} 対応する概要（JP）なければtypeDocumentを返します。
  * @see https://jpx.gitbook.io/j-quants-ja/api-reference/statements/typeofdocument

@@ -6,6 +6,8 @@ function jquants_daily_quotes(code, date) {
   if (!code) return [];
 
   const dailyQuotes = jquants_daily_quotes_(code, date).daily_quotes[0];
+  if (!dailyQuotes) return [date];
+
   return [
     dailyQuotes.Date,
     dailyQuotes.Code,

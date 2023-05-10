@@ -318,6 +318,24 @@ function finsAnnouncement(params) {
 }
 
 /**
+ * 取引カレンダー
+ *
+ * @param {object} params リクエストパラメータ
+ * @return {object} レスポンスオブジェクト
+ * @see https://jpx.gitbook.io/j-quants-ja/api-reference/trading_calendar
+ */
+function marketsTradingCalendar(params) {
+  const { holidaydivision, from, to } = params || {};
+  const param = [
+    holidaydivision ? `holidaydivision=${holidaydivision}` : null,
+    from ? `from=${from}` : null,
+    to ? `to=${to}` : null
+  ].filter(Boolean).join(`&`);
+  const path = `markets/trading_calendar${param ? `?${param}` : ``}`;
+  return fetchWithToken_(path);
+}
+
+/**
  * 開示書類種別
  *
  * @param {string} typeOfDocument 開示書類種別
